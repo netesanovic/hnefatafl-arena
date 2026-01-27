@@ -449,7 +449,7 @@ impl GameState {
 
         // King capture logic based on position
         if target_piece == Piece::King {
-            return self.is_king_captured(target);
+            return self.is_king_captured_from(target, attacker);
         }
 
         // Regular pieces need hostile piece on opposite side
@@ -495,7 +495,7 @@ impl GameState {
         }
     }
 
-    fn is_king_captured(&self, king_pos: Position) -> bool {
+    fn is_king_captured_from(&self, king_pos: Position, attacker_pos: Position) -> bool {
         let center = self.board_size / 2;
 
         // Check if king is on the throne
@@ -515,36 +515,57 @@ impl GameState {
             return self.is_surrounded_next_to_throne(king_pos, Position::new(center, center));
         }
 
-        // King elsewhere: captured like any other piece (two enemies on opposite sides)
-        // This is handled by checking if attackers are on two opposite sides
+        // King elsewhere: captured if attackers are on opposite sides
+        // BUT: only check the direction from the attacker that just moved!
+        // Compute the direction from attacker to king
+        let dr = king_pos.row as i32 - attacker_pos.row as i32;
+        let dc = king_pos.col as i32 - attacker_pos.col as i32;
+
+        // The opposite side from the attacker
+        let opposite_r = king_pos.row as i32 + dr;
+        let opposite_c = king_pos.col as i32 + dc;
+
+        // Check bounds
+        if opposite_r < 0
+            || opposite_r >= self.board_size as i32
+            || opposite_c < 0
+            || opposite_c >= self.board_size as i32
+        {
+            return false;
+        }
+
+        let opposite_pos = Position::new(opposite_r as usize, opposite_c as usize);
+        let opposite_hostile = self.is_hostile_to_king(opposite_pos);
+
+        opposite_hostile
+    }
+
+    // Test helper: Check if king would be captured from ANY direction (used by tests)
+    // Note: This is NOT used in actual game logic - we use is_king_captured_from instead
+    #[cfg(test)]
+    fn is_king_captured(&self, king_pos: Position) -> bool {
+        // Check if king would be captured from any of the 4 directions
         let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
-        for i in 0..2 {
-            let (dr1, dc1) = directions[i * 2];
-            let (dr2, dc2) = directions[i * 2 + 1];
+        for &(dr, dc) in &directions {
+            let attacker_r = king_pos.row as i32 + dr;
+            let attacker_c = king_pos.col as i32 + dc;
 
-            let r1 = king_pos.row as i32 + dr1;
-            let c1 = king_pos.col as i32 + dc1;
-            let r2 = king_pos.row as i32 + dr2;
-            let c2 = king_pos.col as i32 + dc2;
-
-            // Check bounds before creating positions
-            if r1 < 0 || r1 >= self.board_size as i32 || c1 < 0 || c1 >= self.board_size as i32 {
-                continue;
-            }
-            if r2 < 0 || r2 >= self.board_size as i32 || c2 < 0 || c2 >= self.board_size as i32 {
+            if attacker_r < 0
+                || attacker_r >= self.board_size as i32
+                || attacker_c < 0
+                || attacker_c >= self.board_size as i32
+            {
                 continue;
             }
 
-            let pos1 = Position::new(r1 as usize, c1 as usize);
-            let pos2 = Position::new(r2 as usize, c2 as usize);
+            let attacker_pos = Position::new(attacker_r as usize, attacker_c as usize);
 
-            // Check if both opposite sides have attackers or are corners (hostile to king)
-            let side1_hostile = self.is_hostile_to_king(pos1);
-            let side2_hostile = self.is_hostile_to_king(pos2);
-
-            if side1_hostile && side2_hostile {
-                return true;
+            // If there's an attacker in this direction, check if it would capture
+            if let Some(Piece::Attacker) = self.get_piece(attacker_pos) {
+                if self.is_king_captured_from(king_pos, attacker_pos) {
+                    return true;
+                }
             }
         }
 
@@ -1454,5 +1475,85 @@ mod tests {
 
         // King should not be captured (attackers not on opposite sides)
         assert!(!game.is_king_captured(Position::new(2, 2)));
+    }
+
+    #[test]
+    fn test_king_no_capture_from_perpendicular_move() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: King at (4,4) NOT on throne, attackers at (3,4) and (5,4) creating a vertical sandwich
+        // The king is already between two attackers vertically
+        set_piece(&mut game, Position::new(4, 4), Some(Piece::King));
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(5, 4), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(6, 3), Some(Piece::Attacker)); // Another attacker to move
+
+        game.current_player = Player::Attackers;
+
+        // Move an attacker to (4,3) - adjacent to king but perpendicular to existing vertical sandwich
+        // This should NOT capture the king because the move is perpendicular to the pre-existing sandwich
+        game.make_move(Move::new(Position::new(6, 3), Position::new(4, 3)))
+            .unwrap();
+
+        // King should still be alive
+        assert_eq!(
+            game.get_piece(Position::new(4, 4)),
+            Some(Piece::King),
+            "King should not be captured by perpendicular move"
+        );
+    }
+
+    #[test]
+    fn test_regular_piece_no_capture_from_perpendicular_move() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: Defender at (3,3), attacker at (2,3) and (4,3) (vertical sandwich)
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(4, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(5, 2), Some(Piece::Attacker)); // Another attacker to move
+
+        game.current_player = Player::Attackers;
+
+        // Defender is surrounded vertically but not captured (existing position)
+        assert!(game.get_piece(Position::new(3, 3)).is_some());
+
+        // Now move an attacker to a perpendicular position (3,2)
+        // This should NOT capture the defender because the move is perpendicular
+        game.make_move(Move::new(Position::new(5, 2), Position::new(3, 2)))
+            .unwrap();
+
+        // Defender should still be alive
+        assert_eq!(
+            game.get_piece(Position::new(3, 3)),
+            Some(Piece::Defender),
+            "Defender should not be captured by perpendicular move"
+        );
+    }
+
+    #[test]
+    fn test_king_can_be_captured_when_move_completes_sandwich() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: King at (4,4), attacker at (3,4), another attacker to move from (6,4) to (5,4)
+        set_piece(&mut game, Position::new(4, 4), Some(Piece::King));
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(6, 4), Some(Piece::Attacker)); // Attacker to complete sandwich
+
+        game.current_player = Player::Attackers;
+
+        // Move attacker to complete the vertical sandwich
+        game.make_move(Move::new(Position::new(6, 4), Position::new(5, 4)))
+            .unwrap();
+
+        // King should be captured because the move completed the sandwich in the correct direction
+        assert_eq!(
+            game.get_piece(Position::new(4, 4)),
+            None,
+            "King should be captured when move completes the sandwich"
+        );
     }
 }

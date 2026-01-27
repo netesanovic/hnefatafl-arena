@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hnefatafl Arena - Play Against Bots</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Hnefatafl Arena</h1>
+            <p class="subtitle">Ancient Viking Strategy Game</p>
+        </header>
+
+        <div class="game-setup" id="setupPanel">
+            <h2>New Game Setup</h2>
+            <div class="setup-controls">
+                <div class="control-group">
+                    <label for="variant">Game Variant:</label>
+                    <select id="variant">
+                        <option value="Brandubh">Brandubh (7×7)</option>
+                        <option value="Copenhagen">Copenhagen (11×11)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="playerSide">Play as:</label>
+                    <select id="playerSide">
+                        <option value="Defenders">Defenders (King's side)</option>
+                        <option value="Attackers">Attackers</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="botType">Opponent Bot:</label>
+                    <select id="botType">
+                        <option value="greedy">Greedy Bot</option>
+                        <option value="random">Random Bot</option>
+                    </select>
+                </div>
+
+                <button id="newGameBtn" class="btn btn-primary">Start Game</button>
+            </div>
+
+            <div class="rules-summary">
+                <h3>Quick Rules:</h3>
+                <ul>
+                    <li><strong>Defenders</strong>: Get the King to any corner</li>
+                    <li><strong>Attackers</strong>: Capture the King</li>
+                    <li>Pieces move like rooks in chess (straight lines)</li>
+                    <li>Capture by sandwiching between two pieces</li>
+                    <li>King needs 4 pieces to capture (except at throne)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="game-container" id="gameContainer" style="display: none;">
+            <div class="game-info">
+                <div class="info-panel">
+                    <h3>Game Status</h3>
+                    <div class="status-item">
+                        <span class="label">Variant:</span>
+                        <span id="currentVariant">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">You are:</span>
+                        <span id="playerRole">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Current Turn:</span>
+                        <span id="currentTurn" class="highlight">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Selected:</span>
+                        <span id="selectedPiece">None</span>
+                    </div>
+                </div>
+
+                <div class="message-panel">
+                    <div id="gameMessage" class="game-message">Welcome! Click on your pieces to move them.</div>
+                </div>
+
+                <div class="controls-panel">
+                    <button id="backToSetup" class="btn btn-secondary">New Game</button>
+                </div>
+            </div>
+
+            <div class="board-container">
+                <div id="board" class="board"></div>
+            </div>
+
+            <div class="legend">
+                <h3>Legend</h3>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="piece-display king">K</span>
+                        <span>King</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="piece-display defender">D</span>
+                        <span>Defender</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="piece-display attacker">A</span>
+                        <span>Attacker</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="square-display corner"></span>
+                        <span>Corner</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="square-display throne"></span>
+                        <span>Throne</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Built with Rust 🦀 | Hnefatafl Arena</p>
+        </footer>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+
+</html>

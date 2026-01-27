@@ -6,11 +6,11 @@ fn main() {
 
     // Load the plugin bot from the compiled shared library
     let plugin_path = if cfg!(target_os = "linux") {
-        "plugins/greedy_bot_plugin/target/debug/libgreedy_bot_plugin.so"
+        "plugins/greedy_bot_plugin/target/release/libgreedy_bot_plugin.so"
     } else if cfg!(target_os = "macos") {
-        "plugins/greedy_bot_plugin/target/debug/libgreedy_bot_plugin.dylib"
+        "plugins/greedy_bot_plugin/target/release/libgreedy_bot_plugin.dylib"
     } else if cfg!(target_os = "windows") {
-        "plugins/greedy_bot_plugin/target/debug/greedy_bot_plugin.dll"
+        "plugins/greedy_bot_plugin/target/release/greedy_bot_plugin.dll"
     } else {
         panic!("Unsupported platform");
     };
