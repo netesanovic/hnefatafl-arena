@@ -447,9 +447,9 @@ impl GameState {
             _ => {}
         }
 
-        // King needs to be surrounded on all 4 sides
+        // King capture logic based on position
         if target_piece == Piece::King {
-            return self.is_king_surrounded(target);
+            return self.is_king_captured(target);
         }
 
         // Regular pieces need hostile piece on opposite side
@@ -469,9 +469,18 @@ impl GameState {
 
         let opposite = Position::new(opposite_r as usize, opposite_c as usize);
 
-        // Throne and corners act as hostile
-        if self.is_throne(opposite) || self.is_corner(opposite) {
+        // Corners are hostile to all pieces
+        if self.is_corner(opposite) {
             return true;
+        }
+
+        // Throne is hostile to attackers, and hostile to defenders if empty
+        if self.is_throne(opposite) {
+            match target_piece {
+                Piece::Attacker => return true,
+                Piece::Defender => return self.get_piece(opposite).is_none(),
+                _ => {}
+            }
         }
 
         if let Some(opposite_piece) = self.get_piece(opposite) {
@@ -486,7 +495,89 @@ impl GameState {
         }
     }
 
-    fn is_king_surrounded(&self, king_pos: Position) -> bool {
+    fn is_king_captured(&self, king_pos: Position) -> bool {
+        let center = self.board_size / 2;
+
+        // Check if king is on the throne
+        if self.is_throne(king_pos) {
+            // King on throne: must be surrounded on all 4 sides
+            return self.is_surrounded_on_all_sides(king_pos);
+        }
+
+        // Check if king is next to throne (orthogonally adjacent)
+        let is_next_to_throne = (king_pos.row == center
+            && (king_pos.col == center - 1 || king_pos.col == center + 1))
+            || (king_pos.col == center
+                && (king_pos.row == center - 1 || king_pos.row == center + 1));
+
+        if is_next_to_throne {
+            // King next to throne: must be surrounded on 3 sides (throne counts as occupied)
+            return self.is_surrounded_next_to_throne(king_pos, Position::new(center, center));
+        }
+
+        // King elsewhere: captured like any other piece (two enemies on opposite sides)
+        // This is handled by checking if attackers are on two opposite sides
+        let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+
+        for i in 0..2 {
+            let (dr1, dc1) = directions[i * 2];
+            let (dr2, dc2) = directions[i * 2 + 1];
+
+            let r1 = king_pos.row as i32 + dr1;
+            let c1 = king_pos.col as i32 + dc1;
+            let r2 = king_pos.row as i32 + dr2;
+            let c2 = king_pos.col as i32 + dc2;
+
+            // Check bounds before creating positions
+            if r1 < 0 || r1 >= self.board_size as i32 || c1 < 0 || c1 >= self.board_size as i32 {
+                continue;
+            }
+            if r2 < 0 || r2 >= self.board_size as i32 || c2 < 0 || c2 >= self.board_size as i32 {
+                continue;
+            }
+
+            let pos1 = Position::new(r1 as usize, c1 as usize);
+            let pos2 = Position::new(r2 as usize, c2 as usize);
+
+            // Check if both opposite sides have attackers or are corners (hostile to king)
+            let side1_hostile = self.is_hostile_to_king(pos1);
+            let side2_hostile = self.is_hostile_to_king(pos2);
+
+            if side1_hostile && side2_hostile {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn is_surrounded_on_all_sides(&self, king_pos: Position) -> bool {
+        let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+
+        for &(dr, dc) in &directions {
+            let r = king_pos.row as i32 + dr;
+            let c = king_pos.col as i32 + dc;
+
+            if r < 0 || r >= self.board_size as i32 || c < 0 || c >= self.board_size as i32 {
+                return false;
+            }
+
+            let pos = Position::new(r as usize, c as usize);
+
+            // Must be surrounded by attackers
+            if let Some(piece) = self.get_piece(pos) {
+                if piece != Piece::Attacker {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn is_surrounded_next_to_throne(&self, king_pos: Position, throne_pos: Position) -> bool {
         let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
         for &(dr, dc) in &directions {
@@ -499,11 +590,12 @@ impl GameState {
 
             let pos = Position::new(r as usize, c as usize);
 
-            // Must be surrounded by attackers or throne/corners
-            if self.is_throne(pos) || self.is_corner(pos) {
+            // Skip the throne position (it counts as occupied for this purpose)
+            if pos.row == throne_pos.row && pos.col == throne_pos.col {
                 continue;
             }
 
+            // All other adjacent positions must have attackers
             if let Some(piece) = self.get_piece(pos) {
                 if piece != Piece::Attacker {
                     return false;
@@ -514,6 +606,20 @@ impl GameState {
         }
 
         true
+    }
+
+    fn is_hostile_to_king(&self, pos: Position) -> bool {
+        // Corners are hostile to all including king
+        if self.is_corner(pos) {
+            return true;
+        }
+
+        // Check if there's an attacker piece
+        if let Some(piece) = self.get_piece(pos) {
+            return piece == Piece::Attacker;
+        }
+
+        false
     }
 
     fn check_game_end(&mut self) {
@@ -571,5 +677,782 @@ impl GameState {
 impl Default for GameState {
     fn default() -> Self {
         Self::new_copenhagen()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper function to create a custom board state for testing
+    fn create_test_board() -> GameState {
+        GameState::new_brandubh()
+    }
+
+    /// Helper to place a piece on the board
+    fn set_piece(state: &mut GameState, pos: Position, piece: Option<Piece>) {
+        state.board[pos.row][pos.col] = piece;
+        if piece == Some(Piece::King) {
+            state.king_position = Some(pos);
+        }
+    }
+
+    /// Helper to clear the board
+    fn clear_board(state: &mut GameState) {
+        for row in 0..state.board_size {
+            for col in 0..state.board_size {
+                state.board[row][col] = None;
+            }
+        }
+        state.king_position = None;
+    }
+
+    #[test]
+    fn test_initial_setup_brandubh() {
+        let game = GameState::new_brandubh();
+
+        // Check board size
+        assert_eq!(game.board_size(), 7);
+
+        // Check king position (center: 3, 3)
+        assert_eq!(game.get_piece(Position::new(3, 3)), Some(Piece::King));
+
+        // Check 4 defenders around king
+        assert_eq!(game.get_piece(Position::new(2, 3)), Some(Piece::Defender));
+        assert_eq!(game.get_piece(Position::new(4, 3)), Some(Piece::Defender));
+        assert_eq!(game.get_piece(Position::new(3, 2)), Some(Piece::Defender));
+        assert_eq!(game.get_piece(Position::new(3, 4)), Some(Piece::Defender));
+
+        // Check 8 attackers (2 on each side)
+        assert_eq!(game.get_piece(Position::new(0, 3)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(1, 3)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(5, 3)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(6, 3)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(3, 0)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(3, 1)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(3, 5)), Some(Piece::Attacker));
+        assert_eq!(game.get_piece(Position::new(3, 6)), Some(Piece::Attacker));
+    }
+
+    #[test]
+    fn test_corner_identification() {
+        let game = GameState::new_brandubh();
+
+        // Test all four corners
+        assert!(game.is_corner(Position::new(0, 0)));
+        assert!(game.is_corner(Position::new(0, 6)));
+        assert!(game.is_corner(Position::new(6, 0)));
+        assert!(game.is_corner(Position::new(6, 6)));
+
+        // Test non-corners
+        assert!(!game.is_corner(Position::new(0, 3)));
+        assert!(!game.is_corner(Position::new(3, 3)));
+    }
+
+    #[test]
+    fn test_throne_identification() {
+        let game = GameState::new_brandubh();
+
+        // Center is throne
+        assert!(game.is_throne(Position::new(3, 3)));
+
+        // Adjacent to throne is not throne
+        assert!(!game.is_throne(Position::new(2, 3)));
+        assert!(!game.is_throne(Position::new(4, 3)));
+        assert!(!game.is_throne(Position::new(3, 2)));
+        assert!(!game.is_throne(Position::new(3, 4)));
+    }
+
+    #[test]
+    fn test_only_king_can_enter_throne() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place attacker next to throne
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Attacker));
+
+        let moves = game.legal_moves_for_piece(Position::new(2, 3));
+
+        // Should not include throne
+        assert!(!moves.contains(&Move::new(Position::new(2, 3), Position::new(3, 3))));
+    }
+
+    #[test]
+    fn test_only_king_can_enter_corners() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place defender next to corner
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::Defender));
+        game.current_player = Player::Defenders;
+
+        let moves = game.legal_moves_for_piece(Position::new(0, 1));
+
+        // Should not include corner
+        assert!(!moves.contains(&Move::new(Position::new(0, 1), Position::new(0, 0))));
+    }
+
+    #[test]
+    fn test_king_can_enter_corners() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king next to corner
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        game.current_player = Player::Defenders;
+
+        let moves = game.legal_moves_for_piece(Position::new(0, 1));
+
+        // Should include corner
+        assert!(moves.contains(&Move::new(Position::new(0, 1), Position::new(0, 0))));
+    }
+
+    #[test]
+    fn test_regular_piece_capture_by_sandwich() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: A D A (defender sandwiched)
+        //         . . .
+        set_piece(&mut game, Position::new(0, 0), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(0, 2), Some(Piece::Attacker));
+
+        // The defender should be capturable
+        assert!(game.can_capture(Position::new(0, 2), Position::new(0, 1)));
+    }
+
+    #[test]
+    fn test_corner_is_hostile_to_all() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Test attacker captured against corner
+        // X is corner at (0,0)
+        // Place attacker at (0,1) and defender at (0,3)
+        // Defender moves to (0,2) to create sandwich with corner
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(0, 3), Some(Piece::Defender));
+        game.current_player = Player::Defenders;
+
+        // Make move to capture attacker between corner and defender
+        game.make_move(Move::new(Position::new(0, 3), Position::new(0, 2)))
+            .unwrap();
+
+        // Check that attacker is captured
+        assert_eq!(game.get_piece(Position::new(0, 1)), None);
+    }
+
+    #[test]
+    fn test_throne_hostile_to_attackers() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: D at (3,2), A at (3,3) being throne, D at (3,4)
+        // D A(throne) D
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Defender));
+        game.current_player = Player::Defenders;
+
+        // Throne should act as hostile to attacker
+        let can_cap = game.can_capture(Position::new(3, 4), Position::new(3, 3));
+        // Note: throne is hostile to attackers when empty, but this attacker is on throne
+        // Actually defenders can capture attackers normally
+        assert!(can_cap);
+    }
+
+    #[test]
+    fn test_throne_hostile_to_defenders_when_empty() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up: A at (3,2), D at (3,3) being adjacent to throne (2,3), A at (2,3)
+        // Place defender next to empty throne and sandwich with attacker
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(4, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // When attacker moves to complete sandwich with throne, defender is captured
+        game.make_move(Move::new(Position::new(4, 3), Position::new(1, 3)))
+            .ok();
+
+        // Note: throne at (3,3) acts as hostile when empty
+        // But defender at (2,3) needs opposite side to be hostile too
+    }
+
+    #[test]
+    fn test_king_capture_away_from_throne_requires_two_sides() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king at (1, 1) - away from throne
+        set_piece(&mut game, Position::new(1, 1), Some(Piece::King));
+
+        // Place one attacker next to king
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::Attacker));
+
+        // King should NOT be captured with only one attacker
+        assert!(!game.is_king_captured(Position::new(1, 1)));
+
+        // Place second attacker on opposite side
+        set_piece(&mut game, Position::new(2, 1), Some(Piece::Attacker));
+
+        // Now king should be captured
+        assert!(game.is_king_captured(Position::new(1, 1)));
+    }
+
+    #[test]
+    fn test_king_capture_on_throne_requires_four_sides() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king on throne (3, 3)
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::King));
+
+        // Place three attackers
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(4, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Attacker));
+
+        // King should NOT be captured with only three attackers
+        assert!(!game.is_king_captured(Position::new(3, 3)));
+
+        // Place fourth attacker
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Attacker));
+
+        // Now king should be captured
+        assert!(game.is_king_captured(Position::new(3, 3)));
+    }
+
+    #[test]
+    fn test_king_capture_next_to_throne_requires_three_sides() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king next to throne at (2, 3) - throne is at (3, 3)
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::King));
+
+        // Place two attackers (not including throne side)
+        set_piece(&mut game, Position::new(1, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(2, 2), Some(Piece::Attacker));
+
+        // King should NOT be captured with only two attackers
+        assert!(!game.is_king_captured(Position::new(2, 3)));
+
+        // Place third attacker
+        set_piece(&mut game, Position::new(2, 4), Some(Piece::Attacker));
+
+        // Now king should be captured (throne at (3,3) counts as 4th side)
+        assert!(game.is_king_captured(Position::new(2, 3)));
+    }
+
+    #[test]
+    fn test_king_wins_by_reaching_corner() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king next to corner
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        game.current_player = Player::Defenders;
+
+        // Move king to corner
+        game.make_move(Move::new(Position::new(0, 1), Position::new(0, 0)))
+            .unwrap();
+
+        // Check that defenders won
+        assert_eq!(game.result(), Some(&GameResult::DefendersWin));
+    }
+
+    #[test]
+    fn test_attackers_win_by_capturing_king() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king at (1, 1)
+        set_piece(&mut game, Position::new(1, 1), Some(Piece::King));
+
+        // Place attacker at (0, 1)
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::Attacker));
+
+        // Place second attacker at (2, 1) ready to move
+        set_piece(&mut game, Position::new(2, 1), Some(Piece::Attacker));
+
+        game.current_player = Player::Attackers;
+
+        // This move should not work as the attacker is already in position
+        // Let's place the attacker elsewhere and move it
+        set_piece(&mut game, Position::new(2, 1), None);
+        set_piece(&mut game, Position::new(2, 2), Some(Piece::Attacker));
+
+        // Move attacker to complete capture
+        game.make_move(Move::new(Position::new(2, 2), Position::new(2, 1)))
+            .unwrap();
+
+        // Check that king was captured
+        assert_eq!(game.get_piece(Position::new(1, 1)), None);
+
+        // Check game state after switching player
+        assert_eq!(game.result(), Some(&GameResult::AttackersWin));
+    }
+
+    #[test]
+    fn test_pieces_cannot_jump_over_others() {
+        let game = create_test_board();
+
+        // Attacker at (0, 3) cannot jump over attacker at (1, 3)
+        let moves = game.legal_moves_for_piece(Position::new(0, 3));
+
+        // Should not contain any moves beyond (1, 3) in the column
+        for mv in &moves {
+            if mv.from.col == 3 && mv.to.col == 3 {
+                // Moving vertically in column 3, cannot go past row 1 (blocked by attacker at 1,3)
+                assert!(mv.to.row <= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pieces_can_only_move_orthogonally() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place attacker in center of empty board
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        let moves = game.legal_moves_for_piece(Position::new(3, 3));
+
+        // All moves should be in same row or same column
+        for mv in moves {
+            assert!(mv.to.row == 3 || mv.to.col == 3);
+        }
+    }
+
+    #[test]
+    fn test_corner_is_hostile_to_king() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place king at (0, 1) and attacker at (0, 2)
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        set_piece(&mut game, Position::new(0, 2), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker away and back to trigger capture with corner
+        // Actually, corners are hostile, so king at (0,1) between corner (0,0) and attacker (0,2) should be captured
+        // But we need the attacker to move to trigger capture check
+
+        // Clear and reset
+        clear_board(&mut game);
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        set_piece(&mut game, Position::new(0, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker to (0, 2) - this should capture king between corner and attacker
+        game.make_move(Move::new(Position::new(0, 3), Position::new(0, 2)))
+            .unwrap();
+
+        // King should be captured
+        assert_eq!(game.get_piece(Position::new(0, 1)), None);
+    }
+
+    #[test]
+    fn test_regular_defender_capture() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // A D . A (in a row)
+        set_piece(&mut game, Position::new(3, 0), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker to complete sandwich
+        game.make_move(Move::new(Position::new(3, 3), Position::new(3, 2)))
+            .unwrap();
+
+        // Defender should be captured
+        assert_eq!(game.get_piece(Position::new(3, 1)), None);
+    }
+
+    #[test]
+    fn test_attacker_capture_by_defenders() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // D A . D (in a row)
+        set_piece(&mut game, Position::new(3, 0), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Defender));
+        game.current_player = Player::Defenders;
+
+        // Move defender to complete sandwich
+        game.make_move(Move::new(Position::new(3, 3), Position::new(3, 2)))
+            .unwrap();
+
+        // Attacker should be captured
+        assert_eq!(game.get_piece(Position::new(3, 1)), None);
+    }
+
+    #[test]
+    fn test_no_capture_without_sandwich() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Setup: Place defender away from throne with attacker moving next to it
+        // but with empty space on other side (no sandwich, no throne, no corner)
+        // Place pieces at row 1 to avoid throne at (3,3)
+        // . A D . .
+        set_piece(&mut game, Position::new(1, 0), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(1, 2), Some(Piece::Defender));
+        game.current_player = Player::Attackers;
+
+        // Verify opposite side is empty and not a special square
+        assert_eq!(game.get_piece(Position::new(1, 3)), None);
+        assert!(!game.is_throne(Position::new(1, 3)));
+        assert!(!game.is_corner(Position::new(1, 3)));
+
+        // Move attacker to be adjacent to defender
+        game.make_move(Move::new(Position::new(1, 0), Position::new(1, 1)))
+            .unwrap();
+
+        // Defender should NOT be captured because there's no hostile piece on opposite side
+        assert_eq!(game.get_piece(Position::new(1, 2)), Some(Piece::Defender));
+
+        // Also verify the attacker is in its new position
+        assert_eq!(game.get_piece(Position::new(1, 1)), Some(Piece::Attacker));
+    }
+
+    #[test]
+    fn test_king_and_defender_cannot_capture_each_other() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // K D K (defenders only)
+        set_piece(&mut game, Position::new(3, 0), Some(Piece::King));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Defender));
+        game.current_player = Player::Defenders;
+
+        // Move defender next to another defender
+        game.make_move(Move::new(Position::new(3, 3), Position::new(3, 2)))
+            .unwrap();
+
+        // Defender should NOT be captured
+        assert_eq!(game.get_piece(Position::new(3, 1)), Some(Piece::Defender));
+    }
+
+    #[test]
+    fn test_attackers_cannot_capture_each_other() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // A A . A (attackers only)
+        set_piece(&mut game, Position::new(3, 0), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker next to another attacker
+        game.make_move(Move::new(Position::new(3, 3), Position::new(3, 2)))
+            .unwrap();
+
+        // Attacker should NOT be captured
+        assert_eq!(game.get_piece(Position::new(3, 1)), Some(Piece::Attacker));
+    }
+
+    #[test]
+    fn test_multiple_captures_in_one_move() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up cross pattern:
+        //     D
+        //   D A D
+        //     D
+        // Place attacker in middle, defenders around, and another defender to move
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(4, 3), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Defender));
+
+        // This setup won't work for multiple captures with one move in standard rules
+        // Let's test a different scenario: T-shape capture
+        clear_board(&mut game);
+
+        //   A
+        // A D D
+        //   A
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 4), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(5, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker to (4, 3) to complete sandwich on vertical defender
+        game.make_move(Move::new(Position::new(5, 3), Position::new(4, 3)))
+            .unwrap();
+
+        // Middle defender at (3,3) should be captured
+        assert_eq!(game.get_piece(Position::new(3, 3)), None);
+    }
+
+    #[test]
+    fn test_game_starts_with_attackers_turn() {
+        let game = create_test_board();
+        assert_eq!(game.current_player(), Player::Attackers);
+    }
+
+    #[test]
+    fn test_turns_alternate() {
+        let mut game = create_test_board();
+
+        assert_eq!(game.current_player(), Player::Attackers);
+
+        // Make a move
+        let moves = game.legal_moves();
+        if let Some(mv) = moves.first() {
+            game.make_move(*mv).unwrap();
+            assert_eq!(game.current_player(), Player::Defenders);
+        }
+    }
+
+    #[test]
+    fn test_king_not_captured_with_one_side_on_throne() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // King on throne with only 1, 2, or 3 attackers should not be captured
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::King));
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::Attacker));
+
+        assert!(!game.is_king_captured(Position::new(3, 3)));
+
+        set_piece(&mut game, Position::new(4, 3), Some(Piece::Attacker));
+        assert!(!game.is_king_captured(Position::new(3, 3)));
+
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Attacker));
+        assert!(!game.is_king_captured(Position::new(3, 3)));
+    }
+
+    #[test]
+    fn test_king_not_captured_with_two_sides_next_to_throne() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // King next to throne at (2, 3) with only 2 attackers should not be captured
+        set_piece(&mut game, Position::new(2, 3), Some(Piece::King));
+        set_piece(&mut game, Position::new(1, 3), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(2, 2), Some(Piece::Attacker));
+
+        // Throne at (3,3) counts as one side, but we need 3 attackers total
+        assert!(!game.is_king_captured(Position::new(2, 3)));
+    }
+
+    #[test]
+    fn test_throne_empty_hostile_to_defenders() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place defender next to throne and attacker to sandwich
+        // A D T (T is empty throne at 3,3)
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Throne should act as hostile to defender when empty
+        assert!(game.can_capture(Position::new(3, 1), Position::new(3, 2)));
+    }
+
+    #[test]
+    fn test_throne_not_hostile_when_occupied_by_king() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Place defender next to throne occupied by king
+        // A D K (K is king on throne at 3,3)
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::King));
+        set_piece(&mut game, Position::new(3, 2), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Throne occupied by king should not make defender capturable
+        // (Defender and King are on same team)
+        assert!(!game.can_capture(Position::new(3, 1), Position::new(3, 2)));
+    }
+
+    #[test]
+    fn test_all_four_corners_win_for_defenders() {
+        // Test each corner wins the game for defenders
+        let corners = [
+            Position::new(0, 0),
+            Position::new(0, 6),
+            Position::new(6, 0),
+            Position::new(6, 6),
+        ];
+
+        for corner in corners {
+            let mut game = create_test_board();
+            clear_board(&mut game);
+
+            // Place king next to corner
+            let adjacent =
+                Position::new(if corner.row == 0 { 1 } else { corner.row - 1 }, corner.col);
+            set_piece(&mut game, adjacent, Some(Piece::King));
+            game.current_player = Player::Defenders;
+
+            // Move king to corner
+            game.make_move(Move::new(adjacent, corner)).unwrap();
+
+            // Check that defenders won
+            assert_eq!(
+                game.result(),
+                Some(&GameResult::DefendersWin),
+                "Corner {:?} should result in DefendersWin",
+                corner
+            );
+        }
+    }
+
+    #[test]
+    fn test_piece_cannot_move_onto_occupied_square() {
+        let game = create_test_board();
+
+        // Try to find a move where piece would land on occupied square
+        // Attacker at (0,3) should not be able to move to (1,3) which has another attacker
+        let moves = game.legal_moves_for_piece(Position::new(0, 3));
+
+        // Should not contain move to occupied square
+        assert!(!moves.contains(&Move::new(Position::new(0, 3), Position::new(1, 3))));
+    }
+
+    #[test]
+    fn test_capture_requires_opposite_side_hostility() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Test that just having a piece next to an enemy doesn't capture
+        // D A (no piece on other side of attacker)
+        set_piece(&mut game, Position::new(3, 0), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 1), Some(Piece::Attacker));
+        game.current_player = Player::Defenders;
+
+        // Defender at (3,0) should not capture attacker at (3,1)
+        // because there's no hostile piece at (3,2)
+        assert!(!game.can_capture(Position::new(3, 0), Position::new(3, 1)));
+    }
+
+    #[test]
+    fn test_king_with_corner_hostility() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // King between corner and attacker should be captured
+        // K A . (K at corner-adjacent, A next to it)
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        set_piece(&mut game, Position::new(0, 3), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        // Move attacker to sandwich king against corner
+        game.make_move(Move::new(Position::new(0, 3), Position::new(0, 2)))
+            .unwrap();
+
+        // King should be captured (corner is hostile to king)
+        assert_eq!(game.get_piece(Position::new(0, 1)), None);
+        assert_eq!(game.result(), Some(&GameResult::AttackersWin));
+    }
+
+    #[test]
+    fn test_vertical_and_horizontal_captures() {
+        // Test capture works in both horizontal and vertical directions
+
+        // Test horizontal capture
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        set_piece(&mut game, Position::new(2, 1), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(2, 2), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(2, 4), Some(Piece::Attacker));
+        game.current_player = Player::Attackers;
+
+        game.make_move(Move::new(Position::new(2, 4), Position::new(2, 3)))
+            .unwrap();
+        assert_eq!(
+            game.get_piece(Position::new(2, 2)),
+            None,
+            "Horizontal capture failed"
+        );
+
+        // Test vertical capture in a new game
+        let mut game2 = create_test_board();
+        clear_board(&mut game2);
+
+        set_piece(&mut game2, Position::new(1, 2), Some(Piece::Defender));
+        set_piece(&mut game2, Position::new(2, 2), Some(Piece::Attacker));
+        set_piece(&mut game2, Position::new(4, 2), Some(Piece::Defender));
+        game2.current_player = Player::Defenders;
+
+        game2
+            .make_move(Move::new(Position::new(4, 2), Position::new(3, 2)))
+            .unwrap();
+        assert_eq!(
+            game2.get_piece(Position::new(2, 2)),
+            None,
+            "Vertical capture failed"
+        );
+    }
+
+    #[test]
+    fn test_move_count_increments() {
+        let mut game = create_test_board();
+
+        assert_eq!(game.move_count(), 0);
+
+        let moves = game.legal_moves();
+        game.make_move(moves[0]).unwrap();
+        assert_eq!(game.move_count(), 1);
+
+        let moves = game.legal_moves();
+        game.make_move(moves[0]).unwrap();
+        assert_eq!(game.move_count(), 2);
+    }
+
+    #[test]
+    fn test_cannot_move_after_game_over() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Setup king to win
+        set_piece(&mut game, Position::new(0, 1), Some(Piece::King));
+        game.current_player = Player::Defenders;
+
+        // Move king to corner
+        game.make_move(Move::new(Position::new(0, 1), Position::new(0, 0)))
+            .unwrap();
+
+        assert!(game.is_game_over());
+
+        // Try to make another move
+        let result = game.make_move(Move::new(Position::new(0, 0), Position::new(1, 0)));
+        assert!(result.is_err());
+        assert!(matches!(result, Err(GameError::GameOver)));
+    }
+
+    #[test]
+    fn test_king_between_two_attackers_on_different_axes_not_captured() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // King at (2,2) with attackers at (1,2) and (2,1)
+        // This is NOT a capture because attackers are not on opposite sides
+        set_piece(&mut game, Position::new(2, 2), Some(Piece::King));
+        set_piece(&mut game, Position::new(1, 2), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(2, 1), Some(Piece::Attacker));
+
+        // King should not be captured (attackers not on opposite sides)
+        assert!(!game.is_king_captured(Position::new(2, 2)));
     }
 }

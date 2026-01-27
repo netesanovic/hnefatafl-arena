@@ -289,6 +289,7 @@ impl Match {
 
 pub struct Tournament {
     bots: Vec<(String, Box<dyn Bot>)>,
+    #[allow(dead_code)]
     config: MatchConfig,
     verbose: bool,
 }
