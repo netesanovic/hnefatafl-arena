@@ -18,15 +18,6 @@ pub trait Bot: Send {
 
     /// Notified when the game ends
     fn game_end(&mut self) {}
-
-    /// Called when the opponent is thinking
-    /// The bot can use this time to ponder/pre-compute moves
-    /// This is called in a separate thread and should be thread-safe
-    fn opponent_thinking(&mut self, _state: &GameState) {}
-
-    /// Called to stop any ongoing pondering
-    /// The bot should stop any background computation when this is called
-    fn stop_pondering(&mut self) {}
 }
 
 /// A simple random bot for testing

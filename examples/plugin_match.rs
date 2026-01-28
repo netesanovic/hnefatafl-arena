@@ -34,7 +34,7 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_secs(5),
         max_moves: 10,
-        enable_pondering: true,
+
     };
 
     let mut game = Match::new(greedy_bot, random_bot, config, true);

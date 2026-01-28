@@ -12,7 +12,6 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_millis(500),
         max_moves: 10,
-        enable_pondering: false,
     };
 
     // Run the match with verbose output

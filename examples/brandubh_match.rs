@@ -12,7 +12,7 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_millis(500),
         max_moves: 100,
-        enable_pondering: false,
+
     };
     
     // Create a Brandubh game state

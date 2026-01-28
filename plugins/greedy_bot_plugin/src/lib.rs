@@ -1,12 +1,9 @@
 use hnefatafl_arena::{Bot, GameState, Move, Player, Piece, Position};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
-/// A greedy bot that tries to capture pieces and uses pondering
+/// A greedy bot that tries to capture pieces
 pub struct GreedyBotPlugin {
     name: String,
-    pondering: Arc<AtomicBool>,
     last_state: Option<GameState>,
 }
 
@@ -14,7 +11,6 @@ impl Default for GreedyBotPlugin {
     fn default() -> Self {
         Self {
             name: "GreedyPlugin".to_string(),
-            pondering: Arc::new(AtomicBool::new(false)),
             last_state: None,
         }
     }
@@ -78,38 +74,11 @@ impl Bot for GreedyBotPlugin {
     }
 
     fn game_start(&mut self, _player: Player) {
-        // Reset pondering state
-        self.pondering.store(false, Ordering::Relaxed);
         self.last_state = None;
     }
 
     fn notify_move(&mut self, _mv: Move) {
         // Could update internal state here
-    }
-
-    fn game_end(&mut self) {
-        self.pondering.store(false, Ordering::Relaxed);
-    }
-
-    fn opponent_thinking(&mut self, state: &GameState) {
-        // Start pondering - in a real implementation, this would run in a background thread
-        self.pondering.store(true, Ordering::Relaxed);
-        self.last_state = Some(state.clone());
-        
-        // Example: Pre-compute evaluations for possible opponent moves
-        // In a real bot, you'd do this in a loop checking the pondering flag
-        let moves = state.legal_moves();
-        for mv in moves.iter().take(5) {
-            if !self.pondering.load(Ordering::Relaxed) {
-                break;
-            }
-            // Pre-compute evaluation
-            let _ = self.evaluate_move(state, *mv);
-        }
-    }
-
-    fn stop_pondering(&mut self) {
-        self.pondering.store(false, Ordering::Relaxed);
     }
 }
 

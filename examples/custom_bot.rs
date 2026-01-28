@@ -63,7 +63,6 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_secs(1),
         max_moves: 150,
-        enable_pondering: false,
     };
     
     let mut match_game = Match::new(bot1, bot2, config, true);

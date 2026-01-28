@@ -5,7 +5,6 @@ A Rust-based tournament system for Hnefatafl bots. Students can write their own 
 ## Features
 
 ✨ **Plugin System** - Compile bots as shared libraries to hide source code  
-⚡ **Pondering Support** - Think during opponent's turn for competitive advantage  
 🎯 **Multiple Variants** - Copenhagen (11x11) and Brandubh (7x7)  
 🏆 **Tournament Mode** - Round-robin competitions  
 📊 **Match Statistics** - Track wins, timeouts, and illegal moves  
@@ -156,16 +155,6 @@ impl Bot for MyBot {
         // Track game state if needed
     }
     
-    // Optional: Called when opponent is thinking (PONDERING!)
-    fn opponent_thinking(&mut self, state: &GameState) {
-        // Use this time to pre-compute moves!
-    }
-    
-    // Optional: Stop pondering when opponent finishes
-    fn stop_pondering(&mut self) {
-        // Clean up background computation
-    }
-    
     // Optional: Called when game ends
     fn game_end(&mut self) {
         // Cleanup if needed
@@ -188,7 +177,6 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_secs(5),
         max_moves: 200,
-        enable_pondering: true,  // NEW!
     };
     
     // Default is Copenhagen variant
@@ -204,10 +192,7 @@ fn main() {
 let bot1 = PluginBot::load("plugins/bot1.so")?;
 let bot2 = PluginBot::load("plugins/bot2.so")?;
 
-let config = MatchConfig {
-    enable_pondering: true,  // Bots think during opponent's turn
-    ..Default::default()
-};
+let config = MatchConfig::default();
 
 let mut game = Match::new(Box::new(bot1), Box::new(bot2), config, true);
 ```
@@ -286,7 +271,7 @@ cargo test
 ## Documentation
 
 - **[API_REFERENCE.md](API_REFERENCE.md)** - Complete API documentation
-- **[PLUGIN_GUIDE.md](PLUGIN_GUIDE.md)** - Creating plugin bots with pondering
+- **[PLUGIN_GUIDE.md](PLUGIN_GUIDE.md)** - Creating plugin bots
 - **[BRANDUBH.md](BRANDUBH.md)** - Irish variant rules
 - **[TOURNAMENT.md](TOURNAMENT.md)** - Tournament system guide
 ```

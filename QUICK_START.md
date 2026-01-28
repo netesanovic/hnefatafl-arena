@@ -1,4 +1,4 @@
-# Quick Start: Creating a Plugin Bot with Pondering
+# Quick Start: Creating a Plugin Bot
 
 This guide gets you up and running with a plugin bot in 5 minutes!
 
@@ -28,20 +28,16 @@ hnefatafl-arena = { path = "../.." }
 
 ```rust
 use hnefatafl_arena::{Bot, GameState, Move, Player};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 pub struct MyAwesomeBot {
     name: String,
-    pondering: Arc<AtomicBool>,
 }
 
 impl Default for MyAwesomeBot {
     fn default() -> Self {
         Self {
             name: "MyAwesomeBot".to_string(),
-            pondering: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -55,24 +51,6 @@ impl Bot for MyAwesomeBot {
         // TODO: Implement your strategy here!
         let moves = state.legal_moves();
         moves.first().copied()
-    }
-
-    fn opponent_thinking(&mut self, state: &GameState) {
-        // TODO: Use this time to think ahead!
-        self.pondering.store(true, Ordering::Relaxed);
-        
-        // Example: Pre-compute evaluations
-        let moves = state.legal_moves();
-        for mv in moves.iter().take(10) {
-            if !self.pondering.load(Ordering::Relaxed) {
-                break;
-            }
-            // Do useful work here
-        }
-    }
-
-    fn stop_pondering(&mut self) {
-        self.pondering.store(false, Ordering::Relaxed);
     }
 }
 
@@ -104,7 +82,6 @@ fn main() {
     
     let config = MatchConfig {
         time_per_move: Duration::from_secs(5),
-        enable_pondering: true,
         ..Default::default()
     };
     
@@ -135,31 +112,7 @@ Distribute only the compiled library file:
 
 1. **Evaluate positions**: Count pieces, check king safety
 2. **Search ahead**: Try multiple moves and pick the best
-3. **Use pondering**: Pre-compute while opponent thinks
-4. **Cache results**: Remember evaluations you've already done
-
-### ⚡ Use Pondering Effectively
-
-```rust
-fn opponent_thinking(&mut self, state: &GameState) {
-    self.pondering.store(true, Ordering::Relaxed);
-    
-    // Predict opponent's likely moves
-    let opponent_moves = self.predict_moves(state);
-    
-    for mv in opponent_moves {
-        if !self.pondering.load(Ordering::Relaxed) {
-            break;  // Stop when called
-        }
-        
-        // Pre-compute your response
-        let mut future = state.clone();
-        future.make_move(mv).ok();
-        let response = self.find_best_move(&future);
-        self.cache_response(mv, response);
-    }
-}
-```
+3. **Cache results**: Remember evaluations you've already done
 
 ### 🎯 Strategy Ideas
 
@@ -191,7 +144,6 @@ Before writing your own bot, check out the included examples:
 cat plugins/greedy_bot_plugin/src/lib.rs
 ```
 - Single-move evaluation
-- Simple pondering
 - Good starting point
 
 ### Advanced Example: Alpha-Beta Bot

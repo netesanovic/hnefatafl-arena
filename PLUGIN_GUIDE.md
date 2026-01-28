@@ -1,21 +1,19 @@
 # Plugin Bot System
 
-This guide explains how to create bots as compiled plugins where the source code is not visible to other students, and how to use **pondering** to think during the opponent's turn.
+This guide explains how to create bots as compiled plugins where the source code is not visible to other students.
 
 ## Overview
 
 The plugin system allows you to:
 - **Compile your bot as a shared library** (`.so`, `.dll`, or `.dylib`)
 - **Hide your source code** - only distribute the compiled binary
-- **Enable pondering** - continue thinking while your opponent makes their move
 - **Use full Rust capabilities** in your bot implementation
 
 ## Why Use Plugins?
 
 1. **Privacy**: Students can't see each other's strategies
 2. **Performance**: Native compiled code runs at full speed
-3. **Pondering**: Think during opponent's turn for competitive advantage
-4. **Distribution**: Easy to share compiled bots without source code
+3. **Distribution**: Easy to share compiled bots without source code
 
 ## Example Plugin Bots
 
@@ -62,13 +60,10 @@ Create `src/lib.rs`:
 
 ```rust
 use hnefatafl_arena::{Bot, GameState, Move, Player};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 pub struct MyBot {
     name: String,
-    pondering: Arc<AtomicBool>,
     // Add your internal state here
 }
 
@@ -76,7 +71,6 @@ impl Default for MyBot {
     fn default() -> Self {
         Self {
             name: "MyBot".to_string(),
-            pondering: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -96,36 +90,13 @@ impl Bot for MyBot {
         }
     }
 
-    fn game_start(&mut self, player: Player) {
+    fn game_start(&mut self, _player: Player) {
         // Called when game starts - initialize your state
-        self.pondering.store(false, Ordering::Relaxed);
     }
 
-    fn notify_move(&mut self, mv: Move) {
+    fn notify_move(&mut self, _mv: Move) {
         // Called when any move is made (yours or opponent's)
         // Update your internal game state here
-    }
-
-    fn game_end(&mut self) {
-        // Called when game ends - cleanup
-        self.pondering.store(false, Ordering::Relaxed);
-    }
-
-    fn opponent_thinking(&mut self, state: &GameState) {
-        // Called when opponent is thinking - USE THIS TIME!
-        self.pondering.store(true, Ordering::Relaxed);
-        
-        // Example: Start pre-computing moves
-        // In a real bot, run this in a loop checking the pondering flag
-        while self.pondering.load(Ordering::Relaxed) {
-            // Do useful work: evaluate positions, build search trees, etc.
-            // Break when stop_pondering() is called
-        }
-    }
-
-    fn stop_pondering(&mut self) {
-        // Called when opponent finishes their move
-        self.pondering.store(false, Ordering::Relaxed);
     }
 }
 
@@ -167,7 +138,6 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_secs(5),
         max_moves: 200,
-        enable_pondering: true,  // Enable pondering!
     };
     
     let mut game = Match::new(
@@ -191,156 +161,6 @@ cargo build
 # Then run the example
 cd ../..
 cargo run --example plugin_match
-```
-
-## Implementing Pondering
-
-Pondering allows your bot to think during the opponent's turn. Here are strategies:
-
-### Strategy 1: Simple Pre-computation
-
-```rust
-fn opponent_thinking(&mut self, state: &GameState) {
-    self.pondering.store(true, Ordering::Relaxed);
-    
-    // Evaluate likely opponent moves
-    let moves = state.legal_moves();
-    for mv in moves {
-        if !self.pondering.load(Ordering::Relaxed) {
-            break;  // Stop if called
-        }
-        self.precompute_response(state, mv);
-    }
-}
-```
-
-### Strategy 2: Background Thread
-
-```rust
-use std::thread;
-
-fn opponent_thinking(&mut self, state: &GameState) {
-    let pondering = Arc::clone(&self.pondering);
-    let state = state.clone();
-    
-    pondering.store(true, Ordering::Relaxed);
-    
-    thread::spawn(move || {
-        while pondering.load(Ordering::Relaxed) {
-            // Do expensive computation
-        }
-    });
-}
-```
-
-### Strategy 3: Speculative Search
-
-```rust
-fn opponent_thinking(&mut self, state: &GameState) {
-    // Predict opponent's most likely moves
-    let likely_moves = self.predict_opponent_moves(state);
-    
-    for mv in likely_moves {
-        if !self.pondering.load(Ordering::Relaxed) {
-            break;
-        }
-        
-        // Pre-compute your response to this move
-        let mut future_state = state.clone();
-        future_state.make_move(mv).ok();
-        let response = self.compute_best_move(&future_state);
-        
-        // Cache the response
-        self.cache_move(mv, response);
-    }
-}
-```
-
-## Best Practices
-
-### 1. Always Check the Pondering Flag
-
-```rust
-while self.pondering.load(Ordering::Relaxed) {
-    // Your work here
-}
-```
-
-### 2. Use Atomic Operations for Thread Safety
-
-```rust
-use std::sync::atomic::{AtomicBool, Ordering};
-
-let pondering = Arc::new(AtomicBool::new(false));
-```
-
-### 3. Clean Up in stop_pondering()
-
-```rust
-fn stop_pondering(&mut self) {
-    self.pondering.store(false, Ordering::Relaxed);
-    // Cancel any ongoing work
-    // Save useful results
-}
-```
-
-### 4. Don't Block in opponent_thinking()
-
-The function should return quickly. Use threads or iterative processing.
-
-## Advanced Topics
-
-### Caching Evaluations
-
-```rust
-use std::collections::HashMap;
-
-struct MyBot {
-    eval_cache: HashMap<GameState, i32>,
-    pondering: Arc<AtomicBool>,
-}
-
-impl Bot for MyBot {
-    fn opponent_thinking(&mut self, state: &GameState) {
-        // Pre-compute evaluations during pondering
-        for mv in state.legal_moves() {
-            if !self.pondering.load(Ordering::Relaxed) {
-                break;
-            }
-            let mut next = state.clone();
-            next.make_move(mv).ok();
-            let eval = self.evaluate(&next);
-            self.eval_cache.insert(next, eval);
-        }
-    }
-}
-```
-
-### Transposition Tables
-
-Share data between pondering and actual move computation:
-
-```rust
-struct MyBot {
-    transposition_table: Arc<Mutex<HashMap<u64, i32>>>,
-}
-```
-
-## Tournament Setup
-
-Mix plugin and regular bots:
-
-```rust
-let bot1 = PluginBot::load("plugins/bot1.so")?;
-let bot2 = PluginBot::load("plugins/bot2.so")?;
-let bot3 = Box::new(RandomBot::new("Random".to_string()));
-
-let config = MatchConfig {
-    enable_pondering: true,
-    ..Default::default()
-};
-
-// Run matches...
 ```
 
 ## Troubleshooting
@@ -369,13 +189,11 @@ Error: crate-type must be cdylib
 
 **Solution**: Add `crate-type = ["cdylib"]` to `[lib]` section in Cargo.toml.
 
-## Example: Complete Pondering Bot
+## Example Plugin Bots
 
-See `plugins/greedy_bot_plugin/` for a complete example that:
-- ✅ Compiles as a plugin
-- ✅ Implements pondering
-- ✅ Uses atomic operations for thread safety
-- ✅ Pre-computes move evaluations
+See the included examples for complete implementations:
+- `plugins/greedy_bot_plugin/` - Simple single-move evaluation
+- `plugins/alphabeta_bot_plugin/` - Advanced minimax search with pruning
 
 ## Security Note
 
@@ -386,15 +204,14 @@ While plugin bots hide source code, remember:
 
 ## Learning Resources
 
-- **Pondering**: Used in chess engines like Stockfish
+- **Game Tree Search**: Minimax, alpha-beta pruning
 - **Transposition Tables**: Common in game tree search
-- **Thread Safety**: Essential for concurrent computation
 - **FFI**: Rust's Foreign Function Interface for interop
 
 ## Next Steps
 
 1. Create your own plugin bot
-2. Implement basic pondering
-3. Test with `enable_pondering: false` vs `true`
-4. Measure time savings from pre-computation
-5. Enter tournaments!
+2. Implement a strategic evaluation function
+3. Test against the example bots
+4. Enter tournaments!
+

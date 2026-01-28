@@ -21,8 +21,6 @@ pub struct BotVTable {
     pub game_start: unsafe extern "C" fn(*mut (), Player),
     pub notify_move: unsafe extern "C" fn(*mut (), Move),
     pub game_end: unsafe extern "C" fn(*mut ()),
-    pub opponent_thinking: unsafe extern "C" fn(*mut (), *const GameState),
-    pub stop_pondering: unsafe extern "C" fn(*mut ()),
     pub drop: unsafe extern "C" fn(*mut ()),
 }
 
@@ -107,18 +105,6 @@ impl Bot for PluginBot {
             (self.plugin.vtable.game_end)(self.plugin.bot_ptr);
         }
     }
-
-    fn opponent_thinking(&mut self, state: &GameState) {
-        unsafe {
-            (self.plugin.vtable.opponent_thinking)(self.plugin.bot_ptr, state as *const GameState);
-        }
-    }
-
-    fn stop_pondering(&mut self) {
-        unsafe {
-            (self.plugin.vtable.stop_pondering)(self.plugin.bot_ptr);
-        }
-    }
 }
 
 impl Drop for PluginBot {
@@ -150,8 +136,6 @@ macro_rules! export_bot {
                 game_start: bot_game_start,
                 notify_move: bot_notify_move,
                 game_end: bot_game_end,
-                opponent_thinking: bot_opponent_thinking,
-                stop_pondering: bot_stop_pondering,
                 drop: bot_drop,
             };
 
@@ -193,20 +177,6 @@ macro_rules! export_bot {
         unsafe extern "C" fn bot_game_end(ptr: *mut ()) {
             let bot = &mut *(ptr as *mut $bot_type);
             bot.game_end();
-        }
-
-        unsafe extern "C" fn bot_opponent_thinking(
-            ptr: *mut (),
-            state: *const $crate::game::GameState,
-        ) {
-            let bot = &mut *(ptr as *mut $bot_type);
-            let state = &*state;
-            bot.opponent_thinking(state);
-        }
-
-        unsafe extern "C" fn bot_stop_pondering(ptr: *mut ()) {
-            let bot = &mut *(ptr as *mut $bot_type);
-            bot.stop_pondering();
         }
 
         unsafe extern "C" fn bot_drop(ptr: *mut ()) {

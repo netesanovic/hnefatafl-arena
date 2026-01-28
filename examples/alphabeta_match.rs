@@ -53,13 +53,13 @@ fn main() {
         }
     };
 
-    println!("\n🎮 Testing Alpha-Beta search bot with pondering enabled");
+    println!("\n🎮 Testing Alpha-Beta search bot");
     println!("   Using Brandubh variant (7x7) for faster games\n");
 
     let config = MatchConfig {
         time_per_move: Duration::from_secs(5),
         max_moves: 50,
-        enable_pondering: true,
+
     };
 
     println!("{}", "=".repeat(60));
@@ -77,5 +77,4 @@ fn main() {
     println!("   • Minimax search with alpha-beta pruning");
     println!("   • Iterative deepening for time management");
     println!("   • Position evaluation heuristics");
-    println!("   • Pondering during opponent's turn");
 }

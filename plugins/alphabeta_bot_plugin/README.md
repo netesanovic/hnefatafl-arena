@@ -7,7 +7,6 @@ A sophisticated Hnefatafl bot implementing **minimax search with alpha-beta prun
 ✅ **Alpha-Beta Pruning** - Efficient game tree search  
 ✅ **Iterative Deepening** - Optimal time management  
 ✅ **Position Evaluation** - Smart heuristics for Hnefatafl  
-✅ **Pondering Support** - Thinks during opponent's turn  
 ✅ **Configurable Depth** - Adjustable search strength  
 
 ## Algorithm Overview
@@ -95,10 +94,9 @@ let bot = PluginBot::load(
     "plugins/alphabeta_bot_plugin/target/release/libalphabeta_bot_plugin.so"
 )?;
 
-// Configure with pondering enabled
+// Configure match
 let config = MatchConfig {
     time_per_move: Duration::from_secs(5),
-    enable_pondering: true,
     ..Default::default()
 };
 
@@ -183,7 +181,6 @@ This bot demonstrates:
 2. **Alpha-beta pruning** - Optimization strategy
 3. **Iterative deepening** - Time management
 4. **Evaluation functions** - Domain-specific heuristics
-5. **Pondering** - Background computation
 
 ## Performance Tips
 

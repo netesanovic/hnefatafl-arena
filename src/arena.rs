@@ -1,12 +1,10 @@
 use crate::bot::Bot;
 use crate::game::{GameResult, GameState, Player, Variant};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct MatchConfig {
     pub time_per_move: Duration,
     pub max_moves: usize,
-    pub enable_pondering: bool,
 }
 
 impl Default for MatchConfig {
@@ -14,7 +12,6 @@ impl Default for MatchConfig {
         MatchConfig {
             time_per_move: Duration::from_secs(5),
             max_moves: 200,
-            enable_pondering: true,
         }
     }
 }
@@ -88,20 +85,13 @@ impl Match {
             println!("Match starting:");
             println!("  Attackers: {}", self.attacker_bot.name());
             println!("  Defenders: {}", self.defender_bot.name());
-            if self.config.enable_pondering {
-                println!("  Pondering: ENABLED");
-            }
             println!("\nInitial board:");
             println!("{}", self.state.display_board());
         }
 
         while !self.state.is_game_over() && self.state.move_count() < self.config.max_moves {
             let current_player = self.state.current_player();
-            let result = if self.config.enable_pondering {
-                self.play_move_with_pondering(current_player)
-            } else {
-                self.play_move_without_pondering(current_player)
-            };
+            let result = self.play_move(current_player);
 
             if let Some(result) = result {
                 return result;
@@ -150,7 +140,7 @@ impl Match {
         }
     }
 
-    fn play_move_without_pondering(&mut self, current_player: Player) -> Option<MatchResult> {
+    fn play_move(&mut self, current_player: Player) -> Option<MatchResult> {
         let bot = match current_player {
             Player::Attackers => &mut self.attacker_bot,
             Player::Defenders => &mut self.defender_bot,
@@ -169,45 +159,6 @@ impl Match {
         let start = Instant::now();
         let mv = bot.get_move(&self.state, self.config.time_per_move);
         let elapsed = start.elapsed();
-
-        self.handle_move_result(mv, elapsed, current_player)
-    }
-
-    fn play_move_with_pondering(&mut self, current_player: Player) -> Option<MatchResult> {
-        // Get references to both bots
-        let (active_bot, pondering_bot) = match current_player {
-            Player::Attackers => (&mut self.attacker_bot, &mut self.defender_bot),
-            Player::Defenders => (&mut self.defender_bot, &mut self.attacker_bot),
-        };
-
-        if self.verbose {
-            println!(
-                "\nMove {}: {} to play (opponent pondering)",
-                self.state.move_count() + 1,
-                active_bot.name()
-            );
-            println!("Legal moves: {}", self.state.legal_moves().len());
-        }
-
-        // Start pondering in the opponent bot
-        let state_for_pondering = self.state.clone();
-        let pondering_active = Arc::new(Mutex::new(true));
-        let _pondering_active_clone = Arc::clone(&pondering_active);
-
-        // We can't easily move the bot into a thread due to ownership
-        // Instead, call opponent_thinking on the pondering bot in the main thread periodically
-        // A better implementation would use message passing or channels
-
-        // For now, just call it once before getting the move
-        pondering_bot.opponent_thinking(&state_for_pondering);
-
-        // Get move from active bot with time limit
-        let start = Instant::now();
-        let mv = active_bot.get_move(&self.state, self.config.time_per_move);
-        let elapsed = start.elapsed();
-
-        // Stop pondering
-        pondering_bot.stop_pondering();
 
         self.handle_move_result(mv, elapsed, current_player)
     }

@@ -13,7 +13,6 @@ fn main() {
     let config = MatchConfig {
         time_per_move: Duration::from_secs(2),
         max_moves: 150,
-        enable_pondering: false,
     };
     
     // Play a match

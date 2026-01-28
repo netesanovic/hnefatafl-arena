@@ -65,10 +65,6 @@ pub trait Bot {
     fn game_start(&mut self, player: Player) {}
     fn notify_move(&mut self, mv: Move) {}
     fn game_end(&mut self) {}
-    
-    // Pondering support (NEW!)
-    fn opponent_thinking(&mut self, state: &GameState) {}
-    fn stop_pondering(&mut self) {}
 }
 ```
 
@@ -83,7 +79,6 @@ let bot2 = Box::new(MyBot::new("Bot2".to_string()));
 let config = MatchConfig {
     time_per_move: Duration::from_secs(5),
     max_moves: 200,
-    enable_pondering: true,  // NEW! Enable pondering
 };
 
 // Play match
