@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use thiserror::Error;
-
-use crate::game;
 
 /// Board size constants
 pub const COPENHAGEN_SIZE: usize = 11;
@@ -118,6 +119,8 @@ pub struct GameState {
     king_position: Option<Position>,
     move_count: usize,
     result: Option<GameResult>,
+    /// Track position hashes and their occurrence counts for threefold repetition
+    position_history: HashMap<u64, usize>,
 }
 
 impl GameState {
@@ -131,12 +134,16 @@ impl GameState {
             king_position: None,
             move_count: 0,
             result: None,
+            position_history: HashMap::new(),
         };
 
         match variant {
             Variant::Copenhagen => state.setup_copenhagen(),
             Variant::Brandubh => state.setup_brandubh(),
         }
+
+        // Record the initial position
+        state.record_position();
 
         state
     }
@@ -402,6 +409,10 @@ impl GameState {
         self.current_player = self.current_player.opponent();
         self.move_count += 1;
 
+        // Record position and check for threefold repetition
+        self.record_position();
+        self.check_threefold_repetition();
+
         Ok(())
     }
 
@@ -645,6 +656,54 @@ impl GameState {
         false
     }
 
+    /// Compute a hash of the current board position
+    fn hash_position(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+
+        // Hash the board state
+        for row in 0..self.board_size {
+            for col in 0..self.board_size {
+                // Hash each piece position
+                match self.board[row][col] {
+                    None => 0u8.hash(&mut hasher),
+                    Some(Piece::Attacker) => 1u8.hash(&mut hasher),
+                    Some(Piece::Defender) => 2u8.hash(&mut hasher),
+                    Some(Piece::King) => 3u8.hash(&mut hasher),
+                }
+            }
+        }
+
+        // Hash the current player (positions are distinct based on whose turn it is)
+        match self.current_player {
+            Player::Attackers => 0u8.hash(&mut hasher),
+            Player::Defenders => 1u8.hash(&mut hasher),
+        }
+
+        hasher.finish()
+    }
+
+    /// Record the current position in the history
+    fn record_position(&mut self) {
+        let hash = self.hash_position();
+        *self.position_history.entry(hash).or_insert(0) += 1;
+    }
+
+    /// Check if the current position has occurred 3 times (threefold repetition)
+    /// If so, the defender loses
+    fn check_threefold_repetition(&mut self) {
+        if self.result.is_some() {
+            return; // Game already over
+        }
+
+        let hash = self.hash_position();
+        if let Some(&count) = self.position_history.get(&hash) {
+            if count >= 3 {
+                // Threefold repetition - defender loses
+                self.result = Some(GameResult::AttackersWin);
+            }
+        }
+    }
+
     fn check_game_end(&mut self) {
         // Defenders win if king reaches a corner
         if let Some(king_pos) = self.king_position {
@@ -668,7 +727,6 @@ impl GameState {
             }
             return;
         }
-
 
         // Check for draw (no legal moves)
         // This will be checked after switching player
@@ -1580,38 +1638,38 @@ mod tests {
         // Place king in a position where it can be completely surrounded
         // King at (1,1) with limited movement options
         set_piece(&mut game, Position::new(1, 1), Some(Piece::King));
-        
+
         // Place attackers to block most directions
         set_piece(&mut game, Position::new(0, 1), Some(Piece::Attacker)); // Above
         set_piece(&mut game, Position::new(1, 0), Some(Piece::Attacker)); // Left
         set_piece(&mut game, Position::new(2, 1), Some(Piece::Attacker)); // Below
-        
+
         // Place an attacker that will move to block the last direction (right)
         set_piece(&mut game, Position::new(1, 3), Some(Piece::Attacker));
-        
+
         game.current_player = Player::Attackers;
-        
+
         // Verify defenders (king) currently have at least one legal move
         let defender_moves_before = game.legal_moves(Player::Defenders);
         assert!(
             !defender_moves_before.is_empty(),
             "Defenders should have legal moves before the blocking move"
         );
-        
+
         // Move attacker to (1,2) to block the king's last escape route
         game.make_move(Move::new(Position::new(1, 3), Position::new(1, 2)))
             .unwrap();
-        
+
         // After the move, it should be defenders' turn
         assert_eq!(game.current_player(), Player::Defenders);
-        
+
         // Verify defenders have no legal moves
         let defender_moves_after = game.legal_moves(Player::Defenders);
         assert!(
             defender_moves_after.is_empty(),
             "Defenders should have no legal moves after being blocked"
         );
-        
+
         // The game should be over with attackers winning
         assert!(
             game.is_game_over(),
@@ -1621,6 +1679,80 @@ mod tests {
             game.result(),
             Some(&GameResult::AttackersWin),
             "Attackers should win when defenders have no moves"
+        );
+    }
+
+    #[test]
+    fn test_threefold_repetition_defender_loses() {
+        let mut game = create_test_board();
+        clear_board(&mut game);
+
+        // Set up a simple position where pieces can shuttle back and forth
+        // Two attackers that can move back and forth
+        set_piece(&mut game, Position::new(1, 1), Some(Piece::Attacker));
+        set_piece(&mut game, Position::new(5, 1), Some(Piece::Attacker));
+        // Defender and King that can move back and forth
+        set_piece(&mut game, Position::new(3, 5), Some(Piece::Defender));
+        set_piece(&mut game, Position::new(3, 3), Some(Piece::King));
+
+        game.current_player = Player::Attackers;
+
+        // Record the initial position now that we've set it up
+        game.position_history.clear();
+        game.record_position();
+
+        // Now we'll shuttle pieces back and forth to create threefold repetition
+
+        // Move 1: Attacker from (1,1) to (1,2)
+        game.make_move(Move::new(Position::new(1, 1), Position::new(1, 2)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 2: Defender from (3,5) to (3,6)
+        game.make_move(Move::new(Position::new(3, 5), Position::new(3, 6)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 3: Attacker from (1,2) back to (1,1)
+        game.make_move(Move::new(Position::new(1, 2), Position::new(1, 1)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 4: Defender from (3,6) back to (3,5) - first repetition
+        game.make_move(Move::new(Position::new(3, 6), Position::new(3, 5)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 5: Attacker from (1,1) to (1,2) again
+        game.make_move(Move::new(Position::new(1, 1), Position::new(1, 2)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 6: Defender from (3,5) to (3,6) again
+        game.make_move(Move::new(Position::new(3, 5), Position::new(3, 6)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 7: Attacker from (1,2) back to (1,1) again
+        game.make_move(Move::new(Position::new(1, 2), Position::new(1, 1)))
+            .unwrap();
+        assert!(!game.is_game_over());
+
+        // Move 8: Defender from (3,6) back to (3,5) again
+        // This is the THIRD repetition - game should end with Attackers winning
+        game.make_move(Move::new(Position::new(3, 6), Position::new(3, 5)))
+            .unwrap();
+
+        // After this move, the position has occurred 3 times
+        // The game should be over with attackers winning (defender loses on threefold repetition)
+        assert!(
+            game.is_game_over(),
+            "Game should be over after threefold repetition"
+        );
+        assert_eq!(
+            game.result(),
+            Some(&GameResult::AttackersWin),
+            "Attackers should win (defender loses) on threefold repetition"
         );
     }
 }
