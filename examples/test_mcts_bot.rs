@@ -14,7 +14,7 @@ fn main() {
         ..Default::default()
     };
 
-    let mut game = Match::new( Box::new(mcts_bot), Box::new(opponent),config, true);
+    let mut game = Match::new(Box::new(mcts_bot), Box::new(opponent),config, true);
     let result = game.play();
 
     println!("\nResult: {:?}", result.winner());
