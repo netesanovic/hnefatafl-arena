@@ -296,10 +296,8 @@ impl GameState {
 
     /// Check if a position is a corner (throne)
     fn is_corner(&self, pos: Position) -> bool {
-        (pos.row == 0 && pos.col == 0)
-            || (pos.row == 0 && pos.col == self.board_size - 1)
-            || (pos.row == self.board_size - 1 && pos.col == 0)
-            || (pos.row == self.board_size - 1 && pos.col == self.board_size - 1)
+        (pos.row == self.board_size - 1 || pos.row == 0)
+            && (pos.col == self.board_size - 1 || pos.col == 0)
     }
 
     /// Check if a position is the throne (center)
@@ -331,11 +329,11 @@ impl GameState {
     }
 
     fn piece_belongs_to_player(&self, piece: Piece, player: Player) -> bool {
-        match (piece, player) {
-            (Piece::Attacker, Player::Attackers) => true,
-            (Piece::Defender | Piece::King, Player::Defenders) => true,
-            _ => false,
-        }
+        matches!(
+            (piece, player),
+            (Piece::Attacker, Player::Attackers)
+                | (Piece::Defender | Piece::King, Player::Defenders)
+        )
     }
 
     fn legal_moves_for_piece(&self, from: Position) -> Vec<Move> {
@@ -365,10 +363,8 @@ impl GameState {
                 }
 
                 // Only king can move to throne or corners
-                if piece != Piece::King {
-                    if self.is_throne(to) || self.is_corner(to) {
-                        break;
-                    }
+                if piece != Piece::King && (self.is_throne(to) || self.is_corner(to)) {
+                    break;
                 }
 
                 moves.push(Move::new(from, to));
@@ -498,11 +494,11 @@ impl GameState {
 
         if let Some(opposite_piece) = self.get_piece(opposite) {
             // Check if opposite piece is hostile to target
-            match (target_piece, opposite_piece) {
-                (Piece::Attacker, Piece::Defender | Piece::King) => true,
-                (Piece::Defender, Piece::Attacker) => true,
-                _ => false,
-            }
+            matches!(
+                (target_piece, opposite_piece),
+                (Piece::Attacker, Piece::Defender | Piece::King)
+                    | (Piece::Defender, Piece::Attacker)
+            )
         } else {
             false
         }
@@ -548,9 +544,8 @@ impl GameState {
         }
 
         let opposite_pos = Position::new(opposite_r as usize, opposite_c as usize);
-        let opposite_hostile = self.is_hostile_to_king(opposite_pos);
 
-        opposite_hostile
+        self.is_hostile_to_king(opposite_pos)
     }
 
     // Test helper: Check if king would be captured from ANY direction (used by tests)
@@ -719,17 +714,13 @@ impl GameState {
 
         // check that opposite party has legal moves
         let opponent = self.current_player.opponent();
-        if self.legal_moves(opponent).len() == 0 {
+        if self.legal_moves(opponent).is_empty() {
             // No legal moves for opponent - current player wins
             match opponent {
                 Player::Attackers => self.result = Some(GameResult::DefendersWin),
                 Player::Defenders => self.result = Some(GameResult::AttackersWin),
             }
-            return;
         }
-
-        // Check for draw (no legal moves)
-        // This will be checked after switching player
     }
 
     /// Get a string representation of the board

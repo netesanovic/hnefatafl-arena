@@ -84,6 +84,12 @@ impl AppState {
     }
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn piece_to_string(piece: Option<Piece>) -> String {
     match piece {
         None => ".".to_string(),
@@ -300,9 +306,9 @@ async fn get_game_state(State(app_state): State<AppState>) -> Json<GameResponse>
     let size = game.state.variant().board_size();
     let mut board = vec![vec![String::new(); size]; size];
 
-    for row in 0..size {
-        for col in 0..size {
-            board[row][col] = piece_to_string(game.state.get_piece(Position::new(row, col)));
+    for (row_idx, row) in board.iter_mut().enumerate() {
+        for (col_idx, field) in row.iter_mut().enumerate() {
+            *field = piece_to_string(game.state.get_piece(Position::new(row_idx, col_idx)));
         }
     }
 
