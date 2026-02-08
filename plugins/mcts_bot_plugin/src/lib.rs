@@ -20,7 +20,7 @@ impl Default for MctsBot {
         let engine = MCTS::new(0xCAFEBABE, 200_000, SimulationType::ParallelHeavy(8));
         let game = hnefatafl::GameState::new(&engine.z_table);
         Self {
-            name: "McstBot".to_string(),
+            name: "MctsBot".to_string(),
             engine,
             game,
             current_player: None,

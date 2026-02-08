@@ -363,7 +363,11 @@ impl GameState {
                 }
 
                 // Only king can move to throne or corners
-                if piece != Piece::King && (self.is_throne(to) || self.is_corner(to)) {
+                if piece != Piece::King && (self.is_throne(to)) {
+                    continue;
+                }
+
+                if piece != Piece::King && (self.is_corner(to)) {
                     break;
                 }
 
