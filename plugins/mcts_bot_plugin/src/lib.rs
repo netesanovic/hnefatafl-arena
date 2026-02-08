@@ -8,14 +8,14 @@ use std::time::Duration;
 use std::io::Write;
 use crate::mcts::{SimulationType, MCTS};
 
-pub struct McstBot {
+pub struct MctsBot {
     name: String,
     engine: MCTS,
     game: hnefatafl::GameState,
     current_player: Option<Player>,
 }
 
-impl Default for McstBot {
+impl Default for MctsBot {
     fn default() -> Self {
         let engine = MCTS::new(0xCAFEBABE, 200_000, SimulationType::ParallelHeavy(8));
         let game = hnefatafl::GameState::new(&engine.z_table);
@@ -28,7 +28,7 @@ impl Default for McstBot {
     }
 }
 
-impl McstBot {
+impl MctsBot {
     /// Convert internal move format [row, col, row, col] to arena Move
     #[inline]
     fn convert_move(&self, internal_move: &[usize; 4]) -> Move {
@@ -45,7 +45,7 @@ impl McstBot {
     }
 }
 
-impl Bot for McstBot {
+impl Bot for MctsBot {
     fn name(&self) -> &str {
         &self.name
     }
@@ -101,4 +101,4 @@ impl Bot for McstBot {
 }
 
 // REQUIRED: Export your bot using this macro
-hnefatafl_arena::export_bot!(McstBot);
+hnefatafl_arena::export_bot!(MctsBot);
